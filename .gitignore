@@ -54,3 +54,4 @@ dkms.conf
 # Local files 
 local/
 ProgramacionRedes*
+.vscode/
