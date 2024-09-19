@@ -1,14 +1,27 @@
-#include<sys/types.h>
-#include<sys/socket.h>
-#include<netdb.h>
-#include<stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h> // socket(), connect()
+#include <netdb.h>      // addrinfo, getaddrinfo()
+#include <stdio.h>
+#include <string.h>
 
-int main(){
-    const char direcction[] = "www.google.com";
-    printf("Direccion %s\n", direcction);
-    
-    struct addrinfo hints;
-    memsent(&hists, 0, sizeof hints);  
-    getaddrinfo(direcction, AF_INET, 
+int main() {
+    const char *direccion = "www.google.com";
+    printf("Dirección: %s\n", direccion);
+
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    getaddrinfo(direccion, "80", &hints, &res);
+    for(struct addrinfo *p = res; p != NULL; p = (*p).ai_next) {
+        char host[NI_MAXHOST];
+        char serv[NI_MAXSERV];
+        getnameinfo((*p).ai_addr, (*p).ai_addrlen, host, NI_MAXHOST, serv, NI_MAXSERV, NI_NUMERICHOST);
+        printf("Host: %s, Servicio: %s\n", host, serv);
+
+    }
+
+    freeaddrinfo(res);
+    return 0;
 }
-
