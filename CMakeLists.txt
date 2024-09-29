@@ -25,6 +25,3 @@ IF(FOUND_PKG)
 ELSE()
     MESSAGE(FATAL_ERROR "${TEST} Not founded")
 ENDIF()
-
-ADD_EXECUTABLE(dhcpv4_server)
-TARGET_SOURCES(dhcpv4_server PRIVATE text.c)

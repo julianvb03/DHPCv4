@@ -1,3 +1,0 @@
-/home/halbacis/Universidad/DHCPv4/build/CMakeFiles/dhcpv4_server.dir
-/home/halbacis/Universidad/DHCPv4/build/CMakeFiles/edit_cache.dir
-/home/halbacis/Universidad/DHCPv4/build/CMakeFiles/rebuild_cache.dir
