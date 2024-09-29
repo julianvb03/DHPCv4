@@ -55,3 +55,8 @@ dkms.conf
 local/
 ProgramacionRedes*
 .vscode/
+/venv/
+venv/
+__pycache__/
+.vscode/
+si.txt

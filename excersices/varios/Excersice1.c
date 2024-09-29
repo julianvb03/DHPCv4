@@ -15,27 +15,28 @@ int main(int argc, char *argv[]) {
 
 
     //hints.ai_family = AF_UNSPEC;
-    hints.ai_family = AF_INET;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
     if(argc != 2) {
-        fprintf(stderr, "You need to pass only one domain");
+        fprintf(stderr, "You need to pass only one domain\n");
         return 1;
     }
 
-    status = getaddrinfo(argv[1], NULL, &hints, &response);
+    status = getaddrinfo(argv[1], "80", &hints, &response);
     if(status != 0) {
         fprintf(stderr, "Error on getaddrinfo: %s\n", gai_strerror(status));
         return 2;
     }
 
     for(struct addrinfo *p = response; p != NULL; p = (*p).ai_next) {
+        puts("-------------------------------------------------");
         if((*p).ai_family == AF_INET) {
             char hostname[NI_MAXHOST];
             char service[NI_MAXSERV];
             char ip[INET_ADDRSTRLEN];
             
-            status = getnameinfo((*p).ai_addr, sizeof((*p).ai_addr), hostname, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICHOST);
+            status = getnameinfo((*p).ai_addr, sizeof(struct sockaddr_in), hostname, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICHOST);
             if(status != 0) {
                 fprintf(stderr, "Error on getnameinfo: %s\n", gai_strerror(status));
                 return 3;
@@ -52,7 +53,7 @@ int main(int argc, char *argv[]) {
             char service[NI_MAXSERV];
             char ip[INET6_ADDRSTRLEN];
 
-            status = getnameinfo((*p).ai_addr, sizeof((*p).ai_addr), hostname, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICHOST);
+            status = getnameinfo((*p).ai_addr, sizeof(struct sockaddr_in6), hostname, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICHOST);
             if(status != 0) {
                 fprintf(stderr, "Error on getnameinfo: %s\n", gai_strerror(status));
                 return 3;
@@ -68,4 +69,5 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    return 0;
 }

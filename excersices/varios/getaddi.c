@@ -17,7 +17,12 @@ int main() {
     for(struct addrinfo *p = res; p != NULL; p = (*p).ai_next) {
         char host[NI_MAXHOST];
         char serv[NI_MAXSERV];
-        getnameinfo((*p).ai_addr, (*p).ai_addrlen, host, NI_MAXHOST, serv, NI_MAXSERV, NI_NUMERICHOST);
+        int addrlen;
+        if(p->ai_family == AF_INET)
+            addrlen = sizeof (struct sockaddr_in);
+        else
+            addrlen = sizeof (struct sockaddr_in6);
+        getnameinfo((*p).ai_addr, addrlen, host, NI_MAXHOST, serv, NI_MAXSERV, NI_NUMERICHOST);
         printf("Host: %s, Servicio: %s\n", host, serv);
 
     }
