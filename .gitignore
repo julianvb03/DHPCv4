@@ -60,3 +60,5 @@ venv/
 __pycache__/
 .vscode/
 si.txt
+excersices/
+.env
