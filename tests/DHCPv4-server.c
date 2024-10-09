@@ -10,6 +10,11 @@
 #define TRUE 1
 #define FALSE 0
 
+int counter_function(void) {
+    static int counter = 0;
+    return counter++;
+}
+
 int main() {
     char buffer[512];
     int sockfd, status;
@@ -38,15 +43,8 @@ int main() {
     status = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     if (status == -1) {
         close(sockfd);
-        perror("setsockopt (SO_REUSEADDR)");
+        perror("setsockopt");
         return 3;
-    }
-
-    status = setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &(int){1}, sizeof(int));
-    if (status == -1) {
-        close(sockfd);
-        perror("setsockopt (SO_BROADCAST)");
-        return 4;
     }
 
     status = bind(sockfd, res->ai_addr, res->ai_addrlen);
@@ -60,7 +58,20 @@ int main() {
 
     printf("server: waiting for connections...\n");
     
-    addr_len = sizeof their_addr;
+    while (TRUE) {
+        
+    }
+    
+
+    close(sockfd);
+    return 0;
+}
+
+
+
+{
+
+addr_len = sizeof their_addr;
     status = recvfrom(sockfd, buffer, sizeof buffer, 0, (struct sockaddr *)&their_addr, &addr_len);
     if (status == -1) {
         perror("recvfrom");
@@ -68,8 +79,18 @@ int main() {
     }
 
     buffer[status] = '\0'; 
-    printf(("El mensaje broadcast recibido es: %s\n"), buffer);
 
-    close(sockfd);
-    return 0;
+    inet_ntop(their_addr.ss_family, &((struct sockaddr_in *)&their_addr)->sin_addr, ip_str, sizeof ip_str);
+    printf("server: got packet from %s\n", ip_str);
+    printf("server: packet is %d bytes long\n", status);
+    printf("server: packet contains \"%s\"\n", buffer);
+
+    const char* message = "Hello, client!";
+    status = sendto(sockfd, message, strlen(message), 0, (struct sockaddr *)&their_addr, addr_len);
+    if (status == -1) {
+        perror("sendto");
+        return 5;
+    }
+    
+    printf("server: sent packet to %s\n", ip_str);
 }

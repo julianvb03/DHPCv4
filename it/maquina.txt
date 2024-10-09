@@ -1,0 +1,28 @@
+# Actualiza la lista de paquetes y el sistema
+sudo dnf update -y
+
+# Instala el repositorio EPEL si no está habilitado
+sudo dnf install -y epel-release
+
+# Habilita el repositorio CRB (CodeReady Builder), necesario para algunos paquetes de desarrollo
+sudo dnf config-manager --set-enabled crb
+
+# Instala vim, git, gcc, g++, CUnit, CUnit-devel, pkg-config y Python 3.10
+sudo dnf install -y vim git gcc gcc-c++ CUnit CUnit-devel pkg-config python3.10 cmake
+
+# Verifica las versiones instaladas (opcional)
+vim --version
+git --version
+gcc --version
+g++ --version
+pkg-config --modversion CUnit
+python3.10 --version
+cmake --version
+
+# Si deseas que python3 use Python 3.10 como predeterminado
+sudo alternatives --set python3 /usr/bin/python3.10
+
+# Verifica que python3 ahora apunte a Python 3.10 (opcional)
+python3 --version
+
+sudo systemctl set-default multi-user.target
