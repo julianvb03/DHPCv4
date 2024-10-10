@@ -13,8 +13,8 @@
 | `description Conexión a la red LAN principal` | Agrega una descripción a la interfaz. |
 | `copy running-config startup-config` | Guarda la configuración actual para que se mantenga tras un reinicio. |
 | `show startup-config` | Muestra la configuración que se cargará en el próximo reinicio. |
-| `show interfaces FastEthernet0/0 | include packets` | Filtra para mostrar solo las líneas relacionadas con paquetes transmitidos y recibidos. |
-| `show interfaces FastEthernet0/0 | include error` | Filtra para mostrar solo los errores de la interfaz. |
+| `show interfaces FastEthernet0/0 include packets` | Filtra para mostrar solo las líneas relacionadas con paquetes transmitidos y recibidos. |
+| `show interfaces FastEthernet0/0 include error` | Filtra para mostrar solo los errores de la interfaz. |
 
 
 | Comando | Función |

@@ -1,74 +1,72 @@
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netdb.h>
-#include <string.h>
 #include <stdio.h>
-#include <arpa/inet.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
-#define PORT "3490"
-#define TRUE 1
-#define FALSE 0
+#define SERVER_PORT 8067
 
 int main() {
-    char buffer[512];
-    int sockfd, status;
-    struct addrinfo hints, *res;
-    struct sockaddr_storage their_addr;
-    socklen_t addr_len;
-    char ip_str[INET_ADDRSTRLEN];
-
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_flags = AI_PASSIVE;    // Usar mi propia IP
-
-    status = getaddrinfo(NULL, PORT, &hints, &res);
-    if (status != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
-        return 1;
-    }
-
-    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (sockfd == -1) {
-        perror("socket");
-        return 2;
-    }
-
-    status = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
-    if (status == -1) {
-        close(sockfd);
-        perror("setsockopt (SO_REUSEADDR)");
-        return 3;
-    }
-
-    status = setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &(int){1}, sizeof(int));
-    if (status == -1) {
-        close(sockfd);
-        perror("setsockopt (SO_BROADCAST)");
-        return 4;
-    }
-
-    status = bind(sockfd, res->ai_addr, res->ai_addrlen);
-    if (status == -1) {
-        close(sockfd);
-        perror("bind");
-        return 3;
-    }
-
-    freeaddrinfo(res);
-
-    printf("server: waiting for connections...\n");
+    int sockfd;
+    struct sockaddr_in server_addr, client_addr;
+    char buffer[1025];
+    socklen_t addr_len = sizeof(client_addr);
     
-    addr_len = sizeof their_addr;
-    status = recvfrom(sockfd, buffer, sizeof buffer, 0, (struct sockaddr *)&their_addr, &addr_len);
-    if (status == -1) {
-        perror("recvfrom");
-        return 4;
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("Error al crear el socket");
+        exit(1);
     }
 
-    buffer[status] = '\0'; 
-    printf(("El mensaje broadcast recibido es: %s\n"), buffer);
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &(int){1}, sizeof(int)) < 0) {
+        perror("Error al configurar SO_BROADCAST");
+        close(sockfd);
+        exit(1);
+    }
+
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) == -1) {
+        close(sockfd);
+        perror("Error al configurar SO_REUSEADDR");
+        return 3;
+    }
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(SERVER_PORT);
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);  // Escuchar en cualquier IP
+
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Error al enlazar el socket");
+        close(sockfd);
+        exit(1);
+    }
+
+    printf("Servidor DHCP escuchando en el puerto %d...\n", SERVER_PORT);
+
+    while (1) {
+        memset(buffer, 0, sizeof(buffer));
+
+        int numbytes = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0,
+                                (struct sockaddr *)&client_addr, &addr_len);
+        if (numbytes < 0) {
+            perror("Error al recibir el mensaje");
+            continue;
+        }
+
+        printf("Mensaje recibido de %s:%d\n",
+               inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+        printf("Datos (%d bytes):\n", numbytes);
+
+        // Imprimir los bytes recibidos en formato hexadecimal
+        for (int i = 0; i < numbytes; i++) {
+            printf("%02x ", (unsigned char)buffer[i]);
+            if ((i + 1) % 16 == 0) {
+                printf("\n");
+            }
+        }
+        printf("\n\n");
+    }
 
     close(sockfd);
     return 0;
