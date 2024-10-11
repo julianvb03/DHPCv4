@@ -1,37 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <string.h>
-#include <pthread.h>
-#include "dhcpv4_utils.h"
-
-#define SERVER_PORT 8067
-
-struct dhcp_thread_data {
-    char buffer[1024];
-    int numbytes;
-    struct sockaddr_in client_addr;
-};
-
-void *handle_dhcp_generic(void *arg) {
-    struct dhcp_thread_data *data = (struct dhcp_thread_data *)arg;
-
-    struct dhcp_packet local_net_packet;
-    struct dhcp_packet local_host_packet;
-
-    memcpy(&local_net_packet, data->buffer, sizeof(struct dhcp_packet));
-    get_dhcp_struc_ntoh(&local_net_packet, &local_host_packet);
-
-    printf("Paquete DHCP recibido y procesado en el hilo %ld:\n", (unsigned long int)pthread_self());
-    print_dhcp_struc((const char*)&local_host_packet, sizeof(local_host_packet));
-    usleep(1000000);
-    free(data);
-    return NULL;
-}
+#include "dhcpv4_server.h"
 
 int main() {
     int sockfd;
@@ -68,6 +35,14 @@ int main() {
     }
 
     printf("Servidor DHCP escuchando en el puerto %d...\n", SERVER_PORT);
+
+    struct ip_in_poll ips[300];
+    memset(ips, 0, sizeof(ips));
+    if(create_poll(ips, 202, "192.168.1.1", "255.255.255.0") < 0) {
+        close(sockfd);
+        exit(1);
+    }
+
 
     while (1) {
         memset(buffer, 0, sizeof(buffer));

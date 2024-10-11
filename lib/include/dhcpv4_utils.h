@@ -30,20 +30,20 @@
 #define DHCP_OPTIONS_LEN 312
 
 struct dhcp_packet {
-    uint8_t op;        // Message op code / message type
+    uint8_t op;        // Message op code / message type { 1 = START 2 = REPLY }
     uint8_t htype;     // Hardware address type
-    uint8_t hlen;      // Hardware address length
-    uint8_t hops;      // Hops
-    uint32_t xid;      // Transaction ID
-    uint16_t secs;     // Seconds elapsed
-    uint16_t flags;    // Flags
-    uint32_t ciaddr;   // Client IP address
-    uint32_t yiaddr;   // 'Your' IP address
-    uint32_t siaddr;   // Next server IP address
+    uint8_t hlen;      // MAC address length
+    uint8_t hops;      // Counter for the number of jumps on routers before reaching the server
+    uint32_t xid;      // Transaction ID { Static on own case for debugging }
+    uint16_t secs;     // Seconds elapsed after the client started the DHCP process
+    uint16_t flags;    // Flags 1 = Broadcast 0 = Unicast
+    uint32_t ciaddr;   // Client IP address { For renewing }
+    uint32_t yiaddr;   // 'Your' IP address { IP offered to the client }
+    uint32_t siaddr;   // Next server IP address { Optional and using only wen we work with auxiliary servers }             NERVER USED
     uint32_t giaddr;   // Relay agent IP address
-    uint8_t chaddr[16]; // Client hardware address
-    uint8_t sname[64];  // Optional server host name
-    uint8_t file[128];  // Boot file name
+    uint8_t chaddr[16]; // MAC address client
+    uint8_t sname[64];  // Optional server host name                                                                        NEVER USED
+    uint8_t file[128];  // Boot file name { Outburst loading files; using for aditionals files for the client or OS }       NEVER USED
     uint8_t options[DHCP_OPTIONS_LEN]; // Optional parameters field
 } __attribute__((packed));  // For avoid padding
 
