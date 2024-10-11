@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
-#include "tdhcp_package.h"
+#include "dhcpv4_utils.h"
 
 #define SERVER_PORT 8067
 #define CLIENT_PORT 8068
@@ -53,13 +53,14 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // Get the MAC address of the specified interface
+
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         perror("Error opening socket for MAC address retrieval");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
+
     memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, interface, IFNAMSIZ - 1);
     if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0) {

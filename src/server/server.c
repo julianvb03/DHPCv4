@@ -6,27 +6,31 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <string.h>
-#include "dhcp_packet.h"
+#include <pthread.h>
+#include "dhcpv4_utils.h"
 
 #define SERVER_PORT 8067
 
-int handle_dhcp_generic(const char *buffer, int numbytes, struct sockaddr *client_addr) {
-    char local_buffer[1024] = {0};
+struct dhcp_thread_data {
+    char buffer[1024];
+    int numbytes;
+    struct sockaddr_in client_addr;
+};
+
+void *handle_dhcp_generic(void *arg) {
+    struct dhcp_thread_data *data = (struct dhcp_thread_data *)arg;
+
     struct dhcp_packet local_net_packet;
     struct dhcp_packet local_host_packet;
 
-    if (numbytes > sizeof(local_buffer)) {
-        fprintf(stderr, "Error: numbytes es mayor que el tamaño del buffer local.\n");
-        return -1;
-    }
-
-    memcpy(local_buffer, buffer, numbytes);
-    memcpy(&local_net_packet, local_buffer, sizeof(struct dhcp_packet));
+    memcpy(&local_net_packet, data->buffer, sizeof(struct dhcp_packet));
     get_dhcp_struc_ntoh(&local_net_packet, &local_host_packet);
 
+    printf("Paquete DHCP recibido y procesado en el hilo %ld:\n", (unsigned long int)pthread_self());
     print_dhcp_struc((const char*)&local_host_packet, sizeof(local_host_packet));
-
-    return 0;
+    usleep(1000000);
+    free(data);
+    return NULL;
 }
 
 int main() {
@@ -75,8 +79,24 @@ int main() {
             continue;
         }
 
-        handle_dhcp_generic(buffer, numbytes, (struct sockaddr *)&client_addr);
+        struct dhcp_thread_data *data = malloc(sizeof(struct dhcp_thread_data));
+        if (data == NULL) {
+            perror("Error al asignar memoria para los datos del hilo");
+            continue;
+        }
 
+        memcpy(data->buffer, buffer, numbytes);
+        data->numbytes = numbytes;
+        data->client_addr = client_addr;
+
+        pthread_t thread_id;
+        if (pthread_create(&thread_id, NULL, handle_dhcp_generic, data) != 0) {
+            perror("Error al crear el hilo");
+            free(data);
+        } else {
+            pthread_detach(thread_id);
+        }
+        usleep(100000);
     }
 
     close(sockfd);

@@ -1,0 +1,5 @@
+ADD_LIBRARY(dhcpv4_utils STATIC
+    dhcpv4_utils.c
+)
+
+TARGET_INCLUDE_DIRECTORIES(dhcpv4_utils PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
