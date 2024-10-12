@@ -49,7 +49,6 @@ void handle_discover(struct dhcp_packet* packet, struct sockaddr_in* client_addr
     printf("DHCPOFFER enviado\n");
 
     close(sockfd);
-
 }
 
 void *handle_dhcp_generic(void *arg) {

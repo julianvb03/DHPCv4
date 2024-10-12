@@ -10,6 +10,8 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <errno.h>
+#include <linux/if_ether.h>
+#include <linux/if_packet.h>
 #include "dhcpv4_utils.h"
 
 #define SERVER_PORT 8067

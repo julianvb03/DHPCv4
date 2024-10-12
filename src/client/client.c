@@ -2,77 +2,66 @@
 
 int main() {
     int sockfd;
-    struct sockaddr_in their_addr, my_addr;
-    struct dhcp_packet packet;
+    char buffer[4096];
     struct ifreq ifr;
+    struct sockaddr_ll socket_address;
+    char interface[] = "lo"; // Cambiar a la interfaz adecuada
 
-    //volver esto variable
-    char interface[] = "lo"; // Interface name
-
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-        perror("Error creating socket");
+    // Crear un socket raw de nivel Ethernet para capturar todos los paquetes IP
+    if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP))) < 0) {
+        perror("Error creating raw socket");
         exit(EXIT_FAILURE);
     }
 
-    // This option able the posibility to do broadcast over a network
+    // Vincular el socket a la interfaz específica
     memset(&ifr, 0, sizeof(ifr));
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), interface);
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-        perror("Error binding socket to interface");
+        perror("Error binding raw socket to interface");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
 
-    // Configuring my_addr struct
-    memset(&my_addr, 0, sizeof(my_addr));
-    my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons(CLIENT_PORT);
-    my_addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(sockfd, (struct sockaddr *)&my_addr, sizeof(my_addr)) < 0) {
-        perror("Error binding socket");
+    // Obtener el índice de la interfaz de red
+    if (ioctl(sockfd, SIOCGIFINDEX, &ifr) < 0) {
+        perror("Error getting interface index");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
 
-    // Configuring their_addr struct
-    memset(&their_addr, 0, sizeof(their_addr));
-    their_addr.sin_family = AF_INET;
-    their_addr.sin_port = htons(SERVER_PORT);
-    their_addr.sin_addr.s_addr = INADDR_BROADCAST;
+    // Configurar la estructura sockaddr_ll para enviar el paquete
+    memset(&socket_address, 0, sizeof(socket_address));
+    socket_address.sll_family = AF_PACKET;
+    socket_address.sll_ifindex = ifr.ifr_ifindex;
+    socket_address.sll_protocol = htons(ETH_P_IP);
+    socket_address.sll_halen = ETH_ALEN;
 
-    if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &(int){1}, sizeof(int)) < 0) {
-        perror("Error enabling broadcast");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
+    // Aquí debes rellenar `socket_address.sll_addr` con la dirección MAC de destino
+    // Por ejemplo, para enviar un broadcast:
+    memset(socket_address.sll_addr, 0xff, ETH_ALEN); // Dirección de broadcast
 
-    // Temporal socket to get the MAC address
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
-        perror("Error opening socket for MAC address retrieval");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, interface, IFNAMSIZ - 1);
-    if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0) {
-        perror("Error retrieving MAC address");
-        close(fd);
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-    close(fd);
-
+    // Preparar el paquete DHCP DISCOVER
+    struct dhcp_packet packet;
     handle_discover(&packet, &ifr);
 
-    // Print the packet before sending for debugging purposes
-    print_dhcp_struc((const char*)&packet, sizeof(packet));
+    // Imprimir el paquete antes de enviar para depuración
+    // print_dhcp_struc((const char*)&packet, sizeof(packet));
 
-    if(send_with_retries(sockfd, &packet, sizeof(packet), (struct sockaddr *)&their_addr, sizeof(their_addr), &packet, sizeof(packet), TIMEOUT_SECONDS, MAX_RETRIES) < 0) {
+    // Enviar el paquete DHCP DISCOVER usando `sendto`
+    if (sendto(sockfd, &packet, sizeof(packet), 0, (struct sockaddr*)&socket_address, sizeof(socket_address)) < 0) {
+        perror("Error sending DHCP DISCOVER");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
+
+    printf("DHCP DISCOVER enviado\n");
+
+    // Esperar y recibir respuestas DHCP
+        ssize_t len = recv(sockfd, buffer, sizeof(buffer), 0);
+        if (len < 0) {
+            perror("Error receiving data");
+        }
+        printf("Received a packet of length %zd\n", len);
 
     close(sockfd);
     return EXIT_SUCCESS;
