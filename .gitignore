@@ -63,3 +63,5 @@ si.txt
 excersices/
 .env
 build/
+prueba*
+test*
