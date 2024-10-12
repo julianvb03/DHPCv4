@@ -7,62 +7,71 @@ int main() {
     struct sockaddr_ll socket_address;
     char interface[] = "lo"; // Cambiar a la interfaz adecuada
 
-    // Crear un socket raw de nivel Ethernet para capturar todos los paquetes IP
-    if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP))) < 0) {
+    // Crear un socket raw de nivel Ethernet para capturar todos los paquetes
+    if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
         perror("Error creating raw socket");
         exit(EXIT_FAILURE);
     }
 
     // Vincular el socket a la interfaz específica
     memset(&ifr, 0, sizeof(ifr));
-    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), interface);
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-        perror("Error binding raw socket to interface");
+        perror("Error binding socket to interface");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
 
-    // Obtener el índice de la interfaz de red
-    if (ioctl(sockfd, SIOCGIFINDEX, &ifr) < 0) {
-        perror("Error getting interface index");
+    // Configurar el tiempo de espera para recibir la respuesta
+    struct timeval timeout;
+    timeout.tv_sec = TIMEOUT_SECONDS;
+    timeout.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("Error setting timeout");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
-
-    // Configurar la estructura sockaddr_ll para enviar el paquete
-    memset(&socket_address, 0, sizeof(socket_address));
-    socket_address.sll_family = AF_PACKET;
-    socket_address.sll_ifindex = ifr.ifr_ifindex;
-    socket_address.sll_protocol = htons(ETH_P_IP);
-    socket_address.sll_halen = ETH_ALEN;
-
-    // Aquí debes rellenar `socket_address.sll_addr` con la dirección MAC de destino
-    // Por ejemplo, para enviar un broadcast:
-    memset(socket_address.sll_addr, 0xff, ETH_ALEN); // Dirección de broadcast
 
     // Preparar el paquete DHCP DISCOVER
     struct dhcp_packet packet;
     handle_discover(&packet, &ifr);
 
-    // Imprimir el paquete antes de enviar para depuración
-    // print_dhcp_struc((const char*)&packet, sizeof(packet));
+    // Configurar la dirección de broadcast para el envío
+    struct sockaddr_in broadcast_addr;
+    memset(&broadcast_addr, 0, sizeof(broadcast_addr));
+    broadcast_addr.sin_family = AF_INET;
+    broadcast_addr.sin_port = htons(SERVER_PORT);  // Puerto del servidor DHCP
+    broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
-    // Enviar el paquete DHCP DISCOVER usando `sendto`
-    if (sendto(sockfd, &packet, sizeof(packet), 0, (struct sockaddr*)&socket_address, sizeof(socket_address)) < 0) {
-        perror("Error sending DHCP DISCOVER");
+    // Habilitar el envío de paquetes a la dirección de broadcast
+    int broadcast_enable = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable)) < 0) {
+        perror("Error enabling broadcast option");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
 
-    printf("DHCP DISCOVER enviado\n");
+    // Enviar el paquete DHCP DISCOVER usando `send_with_retries`
 
-    // Esperar y recibir respuestas DHCP
-        ssize_t len = recv(sockfd, buffer, sizeof(buffer), 0);
-        if (len < 0) {
-            perror("Error receiving data");
-        }
-        printf("Received a packet of length %zd\n", len);
+    int result = send_with_retries(
+        sockfd, 
+        &packet, 
+        sizeof(packet), 
+        (struct sockaddr*)&broadcast_addr, 
+        sizeof(broadcast_addr), 
+        buffer, 
+        sizeof(buffer), 
+        TIMEOUT_SECONDS
+    );
+
+    if (result < 0) {
+        printf("Failed to receive a DHCP OFFER after multiple attempts.\n");
+        close(sockfd);
+        exit(EXIT_FAILURE); 
+    } 
+
+    printf("Received a DHCP OFFER of length %d bytes.\n", result);
 
     close(sockfd);
-    return EXIT_SUCCESS;
+    return EXIT_SUCCESS; 
 }

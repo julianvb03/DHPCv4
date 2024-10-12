@@ -13,8 +13,8 @@
 #include <time.h>
 #include "dhcpv4_utils.h"
 
-#define SERVER_PORT 8067
-#define CLIENT_PORT 8068
+#define SERVER_PORT 67
+#define CLIENT_PORT 68
 
 struct ip_in_poll {
     char ip_str[INET_ADDRSTRLEN];

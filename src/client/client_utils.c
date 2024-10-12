@@ -1,34 +1,46 @@
 #include "dhcpv4_client.h"
 
-int send_with_retries(int sockfd, const void *message, size_t message_len, struct sockaddr *dest_addr, socklen_t addr_len, void *buffer, size_t buffer_len, int timeout_seconds, int max_retries) {
+int send_with_retries(int sockfd, struct dhcp_packet *packet, size_t packet_len, struct sockaddr *dest_addr, socklen_t addr_len, void *buffer, size_t buffer_len, int max_retries) {
     int retries = 0;
 
     while (retries < max_retries) {
-        // Enviar el mensaje
-        if (sendto(sockfd, message, message_len, 0, dest_addr, addr_len) < 0) {
-            perror("Error sending message");
+        // Enviar el paquete DHCP
+        if (sendto(sockfd, packet, packet_len, 0, dest_addr, addr_len) < 0) {
+            perror("Error sending DHCP DISCOVER");
             return -1;
         }
 
-        printf("Message sent, waiting for reply (attempt %d/%d)...\n", retries + 1, max_retries);
+        printf("DHCP DISCOVER sent, waiting for DHCP OFFER (attempt %d/%d)...\n", retries + 1, max_retries);
 
-        struct timeval timeout;
-        timeout.tv_sec = timeout_seconds;
-        timeout.tv_usec = 0;
-        if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-            perror("Error setting timeout");
-            return -1;
-        }
-
-        int recv_len = recvfrom(sockfd, buffer, buffer_len, 0, dest_addr, &addr_len);
+        // Intentar recibir una respuesta
+        int recv_len = recvfrom(sockfd, buffer, buffer_len, 0, NULL, NULL);
         if (recv_len >= 0) {
-            printf("Received response from server.\n");
-            return recv_len;
+            // Verificar que el paquete es un DHCP OFFER válido
+            struct ethhdr *eth_header = (struct ethhdr *)buffer;
+            struct iphdr *ip_header = (struct iphdr *)(buffer + sizeof(struct ethhdr));
+            struct udphdr *udp_header = (struct udphdr *)(buffer + sizeof(struct ethhdr) + sizeof(struct iphdr));
+
+            // Asegurarse de que el paquete es UDP y que el puerto de destino es 68
+            if (ip_header->protocol == IPPROTO_UDP && ntohs(udp_header->dest) == CLIENT_PORT) {
+                // Verificar si el paquete es un DHCP OFFER
+                struct dhcp_packet *dhcp_response = (struct dhcp_packet *)(buffer + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr));
+
+                if (dhcp_response->options[0] == DHCP_OPTION_MESSAGE_TYPE &&
+                    dhcp_response->options[1] == 1 &&
+                    dhcp_response->options[2] == DHCPOFFER) {
+                    printf("Received DHCP OFFER from server.\n");
+                    return recv_len;
+                } else {
+                    printf("Received a non-DHCP OFFER packet, ignoring.\n");
+                }
+            } else {
+                printf("Received a packet that is not DHCP or not for the right port, ignoring.\n");
+            }
         } else {
             if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                printf("Timeout waiting for response from server, retrying...\n");
+                printf("Timeout waiting for DHCP OFFER, retrying...\n");
             } else {
-                perror("Error receiving response");
+                perror("Error receiving DHCP OFFER");
                 return -1;
             }
         }
@@ -36,7 +48,7 @@ int send_with_retries(int sockfd, const void *message, size_t message_len, struc
         retries++;
     }
 
-    printf("Unable to contact the server after %d attempts.\n", max_retries);
+    printf("Unable to receive DHCP OFFER after %d attempts.\n", max_retries);
     return -1;
 }
 

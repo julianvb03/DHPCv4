@@ -12,14 +12,16 @@
 #include <errno.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
+#include <linux/ip.h>
+#include <linux/udp.h>
 #include "dhcpv4_utils.h"
 
-#define SERVER_PORT 8067
-#define CLIENT_PORT 8068
-#define TIMEOUT_SECONDS 5
-#define MAX_RETRIES 1
+#define SERVER_PORT 67
+#define CLIENT_PORT 68
+#define TIMEOUT_SECONDS 4
+#define MAX_RETRIES 2
 
 void handle_discover(struct dhcp_packet* packet, struct ifreq* ifr);
-int send_with_retries(int sockfd, const void *message, size_t message_len, struct sockaddr *dest_addr, socklen_t addr_len, void *buffer, size_t buffer_len, int timeout_seconds, int max_retries);
+int send_with_retries(int sockfd, struct dhcp_packet *packet, size_t packet_len, struct sockaddr *dest_addr, socklen_t addr_len, void *buffer, size_t buffer_len, int max_retries);
 
 #endif
