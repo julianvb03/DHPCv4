@@ -1,288 +1,310 @@
 #include <stdio.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <net/if.h>
-#include <sys/ioctl.h>
 #include <errno.h>
-#include <linux/if_ether.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <linux/if_packet.h>
-#include <linux/ip.h>
-#include <linux/udp.h>
-#include <linux/filter.h>
+#include <linux/if_ether.h>
+#include <linux/if_arp.h>
+#include <sys/ioctl.h>  // Para obtener la dirección MAC
 #include "dhcpv4_utils.h"
 
-#define SERVER_PORT 67
-#define CLIENT_PORT 68
-#define TIMEOUT_SECONDS 4
-#define MAX_RETRIES 2
+// Definir el tamaño del mensaje DHCP
+#define DHCP_MSG_SIZE 312 //548
 
-int send_with_retries(int sockfd, struct dhcp_packet *packet, size_t packet_len, struct sockaddr *dest_addr, socklen_t addr_len, void *buffer, size_t buffer_len, int max_retries) {
-    int retries = 0;
+// Función para imprimir los datos en formato hexadecimal
+void print_hex(const uint8_t *data, int len) {
+    for (int i = 0; i < len; i++) {
+        // Imprimir el dato en formato hexadecimal
+        printf("%02x ", data[i]);
 
-    while (retries < max_retries) {
-        // Enviar el paquete DHCP
-        if (sendto(sockfd, packet, packet_len, 0, dest_addr, addr_len) < 0) {
-            perror("Error sending DHCP DISCOVER");
-            return -1;
+        // Formato: 16 bytes por línea
+        if ((i + 1) % 16 == 0) {
+            printf("\n");
         }
-
-        printf("DHCP DISCOVER sent, waiting for DHCP OFFER (attempt %d/%d)...\n", retries + 1, max_retries);
-
-        // Intentar recibir una respuesta
-        int recv_len = recvfrom(sockfd, buffer, buffer_len, 0, NULL, NULL);
-        if (recv_len >= 0) {
-            // Verificar que el paquete es un DHCP OFFER válido
-            struct ethhdr *eth_header = (struct ethhdr *)buffer;
-            struct iphdr *ip_header = (struct iphdr *)(buffer + sizeof(struct ethhdr));
-            struct udphdr *udp_header = (struct udphdr *)(buffer + sizeof(struct ethhdr) + sizeof(struct iphdr));
-
-            // Asegurarse de que el paquete es UDP y que el puerto de destino es 68
-            if (ip_header->protocol == IPPROTO_UDP && ntohs(udp_header->dest) == CLIENT_PORT) {
-                // Verificar si el paquete es un DHCP OFFER
-                struct dhcp_packet *dhcp_response = (struct dhcp_packet *)(buffer + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr));
-
-                if (dhcp_response->options[0] == DHCP_OPTION_MESSAGE_TYPE &&
-                    dhcp_response->options[1] == 1 &&
-                    dhcp_response->options[2] == DHCPOFFER) {
-                    printf("Received DHCP OFFER from server.\n");
-                    return recv_len;
-                } else {
-                    printf("Received a non-DHCP OFFER packet, ignoring.\n");
-                }
-            } else {
-                printf("Received a packet that is not DHCP or not for the right port, ignoring.\n");
-            }
-        } else {
-            if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                printf("Timeout waiting for DHCP OFFER, retrying...\n");
-            } else {
-                perror("Error receiving DHCP OFFER");
-                return -1;
-            }
-        }
-
-        retries++;
     }
-
-    printf("Unable to receive DHCP OFFER after %d attempts.\n", max_retries);
-    return -1;
+    // Añadir un salto de línea si no se completaron 16 bytes en la última línea
+    if (len % 16 != 0) {
+        printf("\n");
+    }
 }
 
-void handle_discover(struct dhcp_packet* packet, struct ifreq* ifr) {
-
-    // Prepare the data for the DHCPDISCOVER message
-
-    // Get the MAC address of the network interface and copy it to the chaddr field
-    uint8_t chaddr[16] = {0};
-    memcpy(chaddr, ifr->ifr_hwaddr.sa_data, ETH_ALEN);          // Copy the MAC address
-
-    // NERVER USED options
-    uint8_t sname[64] = {0};                                    // Empty server name
-    uint8_t file[128] = {0};                                    // Empty boot file name
+int get_hwaddr(const char *ifname, uint8_t *hwaddr) {
+    struct ifreq ifr;
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     
-    // Initialize the options field with zeros
-    uint8_t options[DHCP_OPTIONS_LEN] = {0};
+    if (sockfd < 0) {
+        perror("Error al abrir socket");
+        return -1;
+    }
 
-    // Set the DHCP options, only one on this case
-    uint32_t magic_cookie = htonl(DHCP_MAGIC_COOKIE);           // Magic cookie distinguishing DHCP and BOOTP packets
-    memcpy(options, &magic_cookie, sizeof(magic_cookie));
-    options[4] = DHCP_OPTION_MESSAGE_TYPE;                      // Option: DHCP Message Type
-    options[5] = 1;                                             // Length of the option data
-    options[6] = DHCPDISCOVER;                                  // DHCP Discover message type
-    options[7] = DHCP_OPTION_END;                               // End Option
+    // Copiar el nombre de la interfaz a la estructura ifreq
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
 
-    // Use get_dhcp_struc_hton to fill the DHCP packet
-    get_dhcp_struc_hton(
-        packet, 
-        BOOTREQUEST, 
-        HTYPE_ETHERNET, 
-        ETH_ALEN, 
-        0, 
-        0x12345678,  // Transaction ID (can be random)
-        0, 
-        0x8000,  // Flags: Broadcast
-        0, 0, 0, 0,  // IP addresses (ciaddr, yiaddr, siaddr, giaddr)
-        chaddr, 
-        sname, 
-        file, 
-        options
-    );
+    // Obtener la dirección MAC de la interfaz
+    if (ioctl(sockfd, SIOCGIFHWADDR, &ifr) == -1) {
+        perror("Error al obtener la dirección MAC");
+        close(sockfd);
+        return -1;
+    }
 
+    // Copiar la dirección MAC obtenida en el buffer de hwaddr
+    memcpy(hwaddr, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+
+    close(sockfd);
+    return 0;
+}
+
+void print_dhcp_message_type(unsigned char type) {
+    switch (type) {
+        case 1: printf("DHCP Discover\n"); break;
+        case 2: printf("DHCP Offer\n"); break;
+        case 3: printf("DHCP Request\n"); break;
+        case 4: printf("DHCP Decline\n"); break;
+        case 5: printf("DHCP ACK\n"); break;
+        case 6: printf("DHCP NAK\n"); break;
+        case 7: printf("DHCP Release\n"); break;
+        case 8: printf("DHCP Inform\n"); break;
+        default: printf("Unknown DHCP message type\n");
+    }
+}
+
+void print_dhcp_strct(struct dhcp_packet *packet) {
+    // Imprimir los campos de la estructura dhcp_packet
+    printf("op: %d\n", packet->op);
+    printf("htype: %d\n", packet->htype);
+    printf("hlen: %d\n", packet->hlen);
+    printf("hops: %d\n", packet->hops);
+    printf("xid: %u\n", ntohl(packet->xid));
+    printf("secs: %d\n", ntohs(packet->secs));
+    printf("flags: %d\n", ntohs(packet->flags));
+    printf("ciaddr: %u\n", ntohl(packet->ciaddr));
+    printf("yiaddr: %u\n", ntohl(packet->yiaddr));
+    printf("siaddr: %u\n", ntohl(packet->siaddr));
+    printf("giaddr: %u\n", ntohl(packet->giaddr));
+    printf("chaddr: ");
+    printf("Dirección MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", 
+           packet->chaddr[0], packet->chaddr[1], packet->chaddr[2], packet->chaddr[3], packet->chaddr[4], packet->chaddr[5]);
+    printf("sname: ");
+    print_hex(packet->sname, 64);
+    printf("file: ");
+    print_hex(packet->file, 128);
+    printf("options: ");
+    for (int i = 0; i < DHCP_OPTIONS_LEN; i++) {
+
+        unsigned char option = packet->options[i];
+        // Verificar si es la opción de fin (0xFF)
+        if (option == DHCP_OPTION_END) {
+            printf("Fin de las opciones DHCP.\n");
+            break;
+        }
+
+        // Verificar si es una opción de relleno (0x00)
+        if (option == DHCP_OPTION_PAD) {
+            continue;  // Saltar las opciones de relleno
+        }
+
+        // Obtener la longitud de la opción
+        unsigned char length = packet->options[++i];
+
+        // Si encontramos la opción DHCP_OPTION_MESSAGE_TYPE (53)
+        if (option == DHCP_OPTION_MESSAGE_TYPE) {
+            unsigned char message_type = packet->options[i + 1];  // El valor de la opción (tipo de mensaje)
+            printf("Tipo de mensaje DHCP encontrado: ");
+            print_dhcp_message_type(message_type);  // Llamar a la función para imprimir el tipo de mensaje
+        }
+
+        // Avanzar en el array tantas posiciones como longitud de la opción
+        i += length;
+    }
+
+}
+
+int open_raw_socket(const char* ifname, uint8_t hwaddr[ETH_ALEN], int if_index) {
+    // Crear un socket RAW para capturar paquetes (usamos SOCK_RAW y ETH_P_ALL)
+    int s = socket(PF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
+    if (s < 0) {
+        perror("Error al crear socket RAW");
+        return -1;
+    }
+
+    // Asociar el socket a la interfaz de red
+    struct sockaddr_ll bindaddr = {
+        .sll_family = AF_PACKET,
+        .sll_protocol = htons(ETH_P_ALL),  // Captura todo tipo de tráfico
+        .sll_ifindex = if_index,
+        .sll_halen = ETH_ALEN,
+    };
+    memcpy(bindaddr.sll_addr, hwaddr, ETH_ALEN);
+
+    // Enlazar el socket a la interfaz de red especificada
+    if (bind(s, (struct sockaddr *)&bindaddr, sizeof(bindaddr)) < 0) {
+        perror("No se pudo enlazar el socket a la interfaz de red");
+        close(s);
+        return -1;
+    }
+
+    return s;  // Retorna el descriptor del socket RAW
+}
+
+// Estructura simplificada para un mensaje DHCP
+// struct dhcp_msg {
+//     uint8_t op;
+//     uint8_t htype;
+//     uint8_t hlen;
+//     uint8_t hops;
+//     uint32_t xid;
+//     uint16_t secs;
+//     uint16_t flags;
+//     uint32_t ciaddr;
+//     uint32_t yiaddr;
+//     uint32_t siaddr;
+//     uint32_t giaddr;
+//     uint8_t chaddr[16];
+//     uint8_t sname[64];
+//     uint8_t file[128];
+//     uint8_t options[DHCP_MSG_SIZE];
+// };
+int get_dhcp_message_type(uint8_t *options, int options_len) {
+    int i = 0;
+    while (i < options_len) {
+        uint8_t option = options[i];
+        
+        // Fin de opciones
+        if (option == 255) break;
+        
+        // Si es la opción 53, el siguiente byte contiene el tipo de mensaje DHCP
+        if (option == DHCP_OPTION_MESSAGE_TYPE) {
+            return options[i + 2];  // i+2 contiene el valor del tipo de mensaje
+        }
+        
+        // Saltar al siguiente campo de opción (i+1 es la longitud de la opción)
+        i += 2 + options[i + 1];
+    }
+    return -1;  // No se encontró la opción 53
+}
+
+int check_dhcp_magic_cookie(uint8_t *buffer) {
+    // La Magic Cookie empieza en el byte 236 (luego de la estructura fija de 236 bytes)
+    uint32_t *cookie_location = (uint32_t *)(buffer + 236); // Desplazamiento de 236 bytes
+    uint32_t magic_cookie = ntohl(*cookie_location); // Convertir de big-endian a host-endian
+
+    // Imprimir las dos Magic Cookies en formato hexadecimal
+    printf("Magic Cookie recibida: 0x%08x\n", magic_cookie);
+    printf("Magic Cookie esperada: 0x%08x\n", DHCP_MAGIC_COOKIE);
+	
+    // Imprimir las primeras 256 posiciones del buffer en hexadecimal
+    printf("Contenido del buffer hasta la posición 256:\n");
+    for (int i = 0; i < 256; i++) {
+        printf("%02x ", buffer[i]);
+        if ((i + 1) % 16 == 0) {
+            printf("\n");
+        }
+    }
+    // Compara la Magic Cookie con la versión en formato de red
+    return magic_cookie == DHCP_MAGIC_COOKIE;
+} 
+
+int find_dhcp_magic_cookie(uint8_t *buffer, int buffer_len) {
+    // Buscar la Magic Cookie (4 bytes) en el buffer
+    for (int i = 0; i <= buffer_len - 4; i++) {
+        if (buffer[i] == 0x63 && buffer[i + 1] == 0x82 &&
+            buffer[i + 2] == 0x53 && buffer[i + 3] == 0x63) {
+            return i;  // Devolver el offset donde se encuentra la Magic Cookie
+        }
+    }
+    return -1;  // No se encontró la Magic Cookie
+}
+
+int receive_broadcast_message(int sockfd, struct dhcp_packet *local) {
+    uint8_t buffer[2048];  // Buffer para almacenar el paquete recibido
+    int nread;
+
+    // Leer un paquete del socket
+    nread = read(sockfd, buffer, sizeof(buffer));
+    if (nread < 0) {
+        perror("Error al leer el paquete");
+        return -1;
+    }
+
+    // Buscar la Magic Cookie en el paquete recibido
+    int magic_cookie_offset = find_dhcp_magic_cookie(buffer, nread);
+    puts("Magic Cookie encontrada");
+    if (magic_cookie_offset == -1) {
+        printf("Magic Cookie no encontrada. No es un paquete DHCP\n");
+        return -1;
+    }
+
+    // Calcular el inicio del mensaje DHCP en el buffer
+    int dhcp_start_offset = magic_cookie_offset - 236;  // La Magic Cookie se encuentra en el byte 236 de un mensaje DHCP típico
+    if (dhcp_start_offset < 0) {
+        printf("Paquete DHCP incompleto o mal formado\n");
+        return -1;
+    }
+
+    // Copiar la parte del buffer que contiene el mensaje DHCP a la estructura dhcp_packet
+    memcpy(local, buffer + dhcp_start_offset, sizeof(struct dhcp_packet));
+
+    // Imprimir el paquete DHCP en formato hexadecimal
+    print_hex(buffer + dhcp_start_offset, sizeof(struct dhcp_packet));
+
+    // Comprobar el tipo de mensaje DHCP
+    int dhcp_message_type = get_dhcp_message_type(local->options, DHCP_MSG_SIZE);
+    if (dhcp_message_type == DHCPOFFER) {
+        printf("DHCP Offer recibido\n");
+    } else if (dhcp_message_type == DHCPACK) {
+        printf("DHCP ACK recibido\n");
+    } else if (dhcp_message_type == DHCPOFFER) {
+        printf("DHCP OFFER recibido\n");
+    } else if (dhcp_message_type == DHCPREQUEST) {
+        printf("DHCP REQUEST recibido\n");
+    } else {
+        printf("Otro tipo de mensaje DHCP recibido o no se pudo determinar\n");
+        return -1;
+    }
+    print_dhcp_strct(local);
+
+    return 0;
 }
 
 int main() {
-    int sockfd_raw, sockfd_dgram;
-    char buffer[4096];
-    struct ifreq ifr;
-    char interface[] = "enp0s3"; // Cambiar a la interfaz adecuada
+    // Datos de ejemplo para obtener el índice de la interfaz y la dirección MAC
+    const char* ifname = "eth0";  // Cambia a la interfaz de red que estás usando
+    uint8_t hwaddr[ETH_ALEN];
 
-    // Crear un socket raw de nivel Ethernet para capturar todos los paquetes
-    if ((sockfd_raw = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
-        perror("Error creating raw socket");
-        exit(EXIT_FAILURE);
+    // Obtener la dirección MAC de la interfaz
+    if (get_hwaddr(ifname, hwaddr) < 0) {
+        return -1;
     }
 
-    // Vincular el socket a la interfaz específica
-    memset(&ifr, 0, sizeof(ifr));
-    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", interface);
-    if (setsockopt(sockfd_raw, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-        perror("Error binding raw socket to interface");
-        close(sockfd_raw);
-        close(sockfd_dgram);
-        exit(EXIT_FAILURE);
+    // Imprimir la dirección MAC obtenida
+    printf("Dirección MAC de %s: %02x:%02x:%02x:%02x:%02x:%02x\n", ifname,
+           hwaddr[0], hwaddr[1], hwaddr[2], hwaddr[3], hwaddr[4], hwaddr[5]);
+
+    // Obtener el índice de la interfaz
+    int if_index = if_nametoindex(ifname);
+    if (if_index == 0) {
+        perror("No se pudo obtener el índice de la interfaz");
+        return -1;
     }
 
-    // Configurar el tiempo de espera para recibir la respuesta
-    struct timeval timeout;
-    timeout.tv_sec = TIMEOUT_SECONDS;
-    timeout.tv_usec = 0;
-    if (setsockopt(sockfd_raw, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Error setting timeout on raw socket");
-        close(sockfd_raw);
-        close(sockfd_dgram);
-        exit(EXIT_FAILURE);
+    // Abrir un socket RAW
+    int sockfd = open_raw_socket(ifname, hwaddr, if_index);
+    if (sockfd < 0) {
+        perror("Error al abrir el socket RAW");
+        return -1;
     }
 
-    // Crear un socket DGRAM para enviar el mensaje DHCP DISCOVER
-    if ((sockfd_dgram = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-        perror("Error creating UDP socket");
-        close(sockfd_raw);
-        exit(EXIT_FAILURE);
+    struct dhcp_packet local_net_packet;
+
+    // Esperar y recibir un mensaje broadcast
+    while (1) {
+        receive_broadcast_message(sockfd, &local_net_packet);
     }
 
-    // Vincular el socket DGRAM a la interfaz específica
-    if (setsockopt(sockfd_dgram, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-        perror("Error binding UDP socket to interface");
-        close(sockfd_raw);
-        close(sockfd_dgram);
-        exit(EXIT_FAILURE);
-    }
-
-    // Habilitar el envío de paquetes a la dirección de broadcast para el socket DGRAM
-    int broadcast_enable = 1;
-    if (setsockopt(sockfd_dgram, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable)) < 0) {
-        perror("Error enabling broadcast option");
-        close(sockfd_raw);
-        close(sockfd_dgram);
-        exit(EXIT_FAILURE);
-    }
-
-    // Preparar el paquete DHCP DISCOVER
-    struct dhcp_packet packet;
-    handle_discover(&packet, &ifr);
-
-    // Configurar la dirección de broadcast para el envío
-    struct sockaddr_in broadcast_addr;
-    memset(&broadcast_addr, 0, sizeof(broadcast_addr));
-    broadcast_addr.sin_family = AF_INET;
-    broadcast_addr.sin_port = htons(SERVER_PORT);  // Puerto del servidor DHCP
-    broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-
-    // Enviar el paquete DHCP DISCOVER usando el socket DGRAM
-    if (sendto(sockfd_dgram, &packet, sizeof(packet), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr)) < 0) {
-        perror("Error sending DHCP DISCOVER");
-        close(sockfd_raw);
-        close(sockfd_dgram);
-        exit(EXIT_FAILURE);
-    }
-
-    printf("DHCP DISCOVER sent, waiting for DHCP OFFER...\n");
-
-    // Definir los offsets correctos considerando las cabeceras Ethernet e IP
-    #define ETHERNET_HEADER_LEN 14
-    #define MIN_IP_HEADER_LEN 20
-    #define IP_PROTOCOL_OFFSET (ETHERNET_HEADER_LEN + 9)
-    #define IP_TOTAL_LENGTH_OFFSET (ETHERNET_HEADER_LEN + 2)
-    #define UDP_HEADER_OFFSET (ETHERNET_HEADER_LEN + MIN_IP_HEADER_LEN)
-    #define UDP_SRC_PORT_OFFSET (UDP_HEADER_OFFSET)
-    #define UDP_DST_PORT_OFFSET (UDP_HEADER_OFFSET + 2)
-
-    // Convertir los puertos a orden de bytes de red (big-endian)
-    uint16_t server_port_be = htons(SERVER_PORT);
-    uint16_t client_port_be = htons(CLIENT_PORT);
-
-    // Configurar el filtro BPF para capturar solo paquetes UDP del puerto 67 al puerto 68
-    struct sock_filter bpf_code[] = {
-        // Verificar que el paquete es lo suficientemente largo para contener la cabecera IP mínima
-        // Instrucción 0: cargar la longitud del paquete
-        BPF_STMT(BPF_LD + BPF_W + BPF_LEN, 0),
-        // Instrucción 1: comprobar si el paquete es menor que la longitud mínima
-        BPF_JUMP(BPF_JMP + BPF_JGE + BPF_K, ETHERNET_HEADER_LEN + MIN_IP_HEADER_LEN, 0, 10),
-
-        // Cargar el byte del protocolo IP
-        BPF_STMT(BPF_LD + BPF_B + BPF_ABS, IP_PROTOCOL_OFFSET),
-        BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, IPPROTO_UDP, 0, 8), // Si no es UDP, saltar
-
-        // Verificar que el paquete es lo suficientemente largo para contener los puertos UDP
-        BPF_STMT(BPF_LD + BPF_W + BPF_LEN, 0),
-        BPF_JUMP(BPF_JMP + BPF_JGE + BPF_K, UDP_DST_PORT_OFFSET + 2, 0, 6),
-
-        // Cargar el puerto de origen
-        BPF_STMT(BPF_LD + BPF_H + BPF_ABS, UDP_SRC_PORT_OFFSET),
-        BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, server_port_be, 0, 4), // Si no es puerto 67, saltar
-
-        // Cargar el puerto de destino
-        BPF_STMT(BPF_LD + BPF_H + BPF_ABS, UDP_DST_PORT_OFFSET),
-        BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, client_port_be, 0, 2), // Si no es puerto 68, saltar
-
-        // Aceptar el paquete si coincide
-        BPF_STMT(BPF_RET + BPF_K, 0xFFFF),
-
-        // Rechazar el paquete si no coincide
-        BPF_STMT(BPF_RET + BPF_K, 0),
-    };
-
-    struct sock_fprog bpf_prog = {
-        .len = sizeof(bpf_code) / sizeof(bpf_code[0]),
-        .filter = bpf_code
-    };
-
-    // Aplicar el filtro BPF al socket RAW
-    if (setsockopt(sockfd_raw, SOL_SOCKET, SO_ATTACH_FILTER, &bpf_prog, sizeof(bpf_prog)) < 0) {
-        perror("Error attaching BPF filter");
-        close(sockfd_raw);
-        close(sockfd_dgram);
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Waiting for DHCP OFFER...\n");
-    int recv_len = recv(sockfd_raw, buffer, sizeof(buffer), 0);
-    if (recv_len < 0) {
-        perror("Error receiving DHCP OFFER");
-    } else {
-        printf("Received a packet of length %d bytes.\n", recv_len);
-
-        // Procesar el paquete recibido si es necesario
-        struct ethhdr *eth_header = (struct ethhdr *)buffer;
-        struct iphdr *ip_header = (struct iphdr *)(buffer + ETHERNET_HEADER_LEN);
-        int ip_header_len = ip_header->ihl * 4; // Longitud de la cabecera IP
-        struct udphdr *udp_header = (struct udphdr *)(buffer + ETHERNET_HEADER_LEN + ip_header_len);
-
-        // Verificar si es un paquete UDP con el puerto de destino CLIENT_PORT (68)
-        if (ip_header->protocol == IPPROTO_UDP && ntohs(udp_header->dest) == CLIENT_PORT) {
-            // Extraer el contenido del paquete DHCP
-            struct dhcp_packet *dhcp_response = (struct dhcp_packet *)(buffer + ETHERNET_HEADER_LEN + ip_header_len + sizeof(struct udphdr));
-
-            // Verificar si es un DHCP OFFER
-            if (dhcp_response->options[0] == DHCP_OPTION_MESSAGE_TYPE &&
-                dhcp_response->options[1] == 1 &&
-                dhcp_response->options[2] == DHCPOFFER) {
-                printf("Received a valid DHCP OFFER.\n");
-            } else {
-                printf("Received a packet, but it is not a DHCP OFFER, ignoring.\n");
-            }
-        } else {
-            printf("Received a non-UDP packet or one not for the right port, ignoring.\n");
-        }
-    }
-
-    // Cerrar los sockets antes de salir
-    close(sockfd_raw);
-    close(sockfd_dgram);
-
-    return EXIT_SUCCESS; 
+    close(sockfd);
+    return 0;
 }
