@@ -28,6 +28,7 @@
 // Lengths
 #define ETH_ALEN 6   // Length of an Ethernet address (MAC address)
 #define DHCP_OPTIONS_LEN 312
+#define DHCP_OPTION_PAD 0
 
 struct dhcp_packet {
     uint8_t op;        // Message op code / message type { 1 = START 2 = REPLY }
