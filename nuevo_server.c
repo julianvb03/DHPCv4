@@ -430,12 +430,12 @@ int handle_discover(struct dhcp_packet* packet, struct configuration* config, ch
     printf("Se va a ofertar la IP: %s\n", ip_offer);
     //print_dhcp_strct(packet);
 
+    usleep(1000000);
     if (send_dhcp_package(packet) < 0) {
         printf("Error al enviar el paquete DHCP Offer\n");
         return -1;
     }
 
-    usleep(1000000);
     printf("Se envió la oferta de IP despues de esperar\n");
     return 0;
 }
@@ -453,12 +453,12 @@ int handle_ack(struct dhcp_packet* packet, struct sockaddr_in* client_addr) {
     struct dhcp_packet packet_host;
     get_dhcp_struc_ntoh(packet, &packet_host);
 
+    usleep(1000000);
     if(send_dhcp_package(packet) < 0) {
         printf("Error al enviar el paquete DHCP ACK\n");
         return -1;
     }
 
-    usleep(1000000);
     return 0;
 }
 
