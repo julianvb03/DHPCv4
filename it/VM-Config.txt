@@ -1,0 +1,35 @@
+# For install guest adittions for linux if you want
+sudo dnf install tar bzip2 kernel-devel kernel-headers perl gcc make elfutils-libelf-devel
+
+# Update the package list and the system
+sudo dnf update -y
+
+# Enable the CRB (CodeReady Builder) repository, necessary for some development packages
+sudo dnf config-manager --set-enabled crb
+
+# Install vim, git, gcc, g++, CUnit, CUnit-devel, pkg-config, and Python 3.10
+sudo dnf install -y vim git gcc gcc-c++ CUnit CUnit-devel pkg-config cmake
+
+# Verify the installed versions (optional)
+vim --version
+git --version
+gcc --version
+g++ --version
+pkg-config --modversion CUnit
+cmake --version
+
+# You can disable the graphical interface with
+sudo systemctl set-default multi-user.target
+
+# Disable DHCP clients on the system
+sudo pkill dhclient
+sudo systemctl stop NetworkManager
+sudo pkill dhcpcd
+
+# Network options for the DHCP Server
+sudo ip addr add 192.168.1.2/24 dev enp0s3
+sudo ip route add default via 192.168.1.1
+
+# Ways to turn off the firewall to avoid possible issues with broadcast-type messages
+sudo systemctl stop firewalld
+sudo systemctl disable firewalld
